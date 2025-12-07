@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Saved databases
+*.npz
+*_db/
+
+# Sample data (user-provided)
+sample_data/*.txt
+sample_data/*.md
+!sample_data/README.txt
+
+
+# all the folders under collections/
+collections/*
+!collections/npz_viewer.py
+
+# Ignore all files in sample_data but keep the folder itself (no exception for README)
+sample_data/*
+!sample_data/
+
+
+

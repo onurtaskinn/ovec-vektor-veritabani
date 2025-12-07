@@ -411,5 +411,12 @@ def main():
 
 
 if __name__ == "__main__":
+    # example command to run this file:
+    # python document_search.py --docs-dir "sample_data/" --index-type "ivf" --no-index --save "collections/index_collection" --query "What is the capital of France?"
+
+    # python document_search.py --docs-dir "sample_data/" --index-type "ivf" --save "collections/indexed_collection" 
+    # python document_search.py --docs-dir "sample_data/" --index-type --no-index --save "collections/not_indexed_collection" 
+
+    # python document_search.py --docs-dir "sample_data/" --load "collections/indexed_collection" --query "What is the capital of France?"
     main()
 

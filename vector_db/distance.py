@@ -10,6 +10,22 @@ from typing import Literal
 DistanceMetric = Literal["cosine", "euclidean", "dot_product"]
 
 
+def normalize_vectors(vectors: np.ndarray) -> np.ndarray:
+    """
+    L2 normalize vectors for cosine similarity computation.
+    
+    Args:
+        vectors: Array of shape (n_vectors, dimension)
+        
+    Returns:
+        Normalized vectors
+    """
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    # Avoid division by zero
+    norms = np.where(norms == 0, 1, norms)
+    return vectors / norms
+
+
 def cosine_similarity(query: np.ndarray, vectors: np.ndarray) -> np.ndarray:
     """
     Compute cosine similarity between query and multiple vectors.
@@ -142,4 +158,3 @@ def get_top_k_indices(scores: np.ndarray, k: int) -> np.ndarray:
     indices = indices[np.argsort(scores[indices])[::-1]]
     
     return indices
-

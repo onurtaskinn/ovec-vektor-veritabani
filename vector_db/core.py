@@ -3,6 +3,9 @@ Core VectorDB implementation with basic CRUD operations and search.
 """
 
 import numpy as np
+import json
+import os
+from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from .distance import compute_distances, get_top_k_indices, DistanceMetric
 
@@ -278,3 +281,88 @@ class VectorDB:
     def vectors(self) -> np.ndarray:
         """Get all vectors as a numpy array."""
         return self._vectors.copy()
+
+    def save(self, path: str) -> None:
+        """
+        Save a VectorDB instance to disk.
+        
+        Args:
+            path: Directory path to save to (will be created if doesn't exist)
+        """
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        
+        # Save vectors and IDs
+        vectors_file = path / "vectors.npz"
+        np.savez_compressed(
+            vectors_file,
+            vectors=self._vectors,
+            ids=np.array(self._ids, dtype=object)
+        )
+        
+        # Save metadata as JSON
+        metadata_file = path / "metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(self._metadata, f, indent=2)
+        
+        # Save configuration
+        config = {
+            'dimension': self.dimension,
+            'metric': self.metric,
+            'n_vectors': len(self)
+        }
+        config_file = path / "config.json"
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+    @staticmethod
+    def load(path: str) -> 'VectorDB':
+        """
+        Load a VectorDB instance from disk.
+        
+        Args:
+            path: Directory path to load from
+            
+        Returns:
+            Loaded VectorDB instance
+            
+        Raises:
+            FileNotFoundError: If required files don't exist
+            ValueError: If data is corrupted or incompatible
+        """
+        path = Path(path)
+        
+        if not path.exists():
+            raise FileNotFoundError(f"Database path '{path}' not found")
+        
+        # Load configuration
+        config_file = path / "config.json"
+        if not config_file.exists():
+            raise FileNotFoundError(f"Config file not found in '{path}'")
+        
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        
+        # Create VectorDB instance
+        db = VectorDB(
+            dimension=config['dimension'],
+            metric=config['metric']
+        )
+        
+        # Load vectors and IDs
+        vectors_file = path / "vectors.npz"
+        if vectors_file.exists():
+            data = np.load(vectors_file, allow_pickle=True)
+            db._vectors = data['vectors']
+            db._ids = data['ids'].tolist()
+            
+            # Rebuild ID to index mapping
+            db._id_to_idx = {id: i for i, id in enumerate(db._ids)}
+        
+        # Load metadata
+        metadata_file = path / "metadata.json"
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                db._metadata = json.load(f)
+        
+        return db

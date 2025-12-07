@@ -118,6 +118,66 @@ def example_4_different_metrics():
     print()
 
 
+def example_5_persistence():
+    """Example 5: Save and load database."""
+    print("=" * 60)
+    print("Example 5: Save and Load Database")
+    print("=" * 60)
+    
+    import tempfile
+    import shutil
+    
+    # Create temporary directory
+    temp_dir = tempfile.mkdtemp()
+    save_path = os.path.join(temp_dir, "my_database")
+    
+    try:
+        # Create and populate database
+        db = VectorDB(dimension=64, metric="cosine")
+        
+        vectors = np.random.randn(100, 64).astype(np.float32)
+        ids = [f"item_{i}" for i in range(100)]
+        metadata = [{"name": f"Item {i}", "value": i} for i in range(100)]
+        
+        db.batch_insert(ids, vectors, metadata)
+        
+        print(f"✓ Created database with {len(db)} vectors")
+        
+        # Save to disk
+        db.save(save_path)
+        print(f"✓ Saved database to {save_path}")
+        
+        # Load from disk
+        db_loaded = VectorDB.load(save_path)
+        print(f"✓ Loaded database with {len(db_loaded)} vectors")
+        
+        # Verify data is intact
+        original_vec = db.get("item_42")
+        loaded_vec = db_loaded.get("item_42")
+        
+        assert np.allclose(original_vec['vector'], loaded_vec['vector'])
+        assert original_vec['metadata'] == loaded_vec['metadata']
+        
+        print("✓ Data integrity verified")
+        
+        # Search works on loaded database
+        query = vectors[0]
+        results = db_loaded.search(query, top_k=3)
+        print(f"✓ Search works on loaded database: found {len(results)} results")
+        
+        # Test clean up
+        db_loaded.clear()
+        
+    finally:
+        # Cleanup
+        if os.path.exists(save_path):
+            shutil.rmtree(save_path)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+    
+    print()
+
+
 def example_6_crud_operations():
     """Example 6: CRUD operations."""
     print("=" * 60)
@@ -157,7 +217,7 @@ if __name__ == "__main__":
     example_2_batch_operations()
     # example_3_ivf_index()
     example_4_different_metrics()
-    # example_5_persistence()
+    example_5_persistence()
     example_6_crud_operations()
     # example_7_real_world_simulation()
     

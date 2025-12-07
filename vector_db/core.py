@@ -42,12 +42,15 @@ class VectorDB:
     - Basic CRUD operations (insert, delete, update)
     - Similarity search with multiple distance metrics
     - Optional metadata storage
+    - Brute-force and indexed search
     """
     
     def __init__(
         self, 
         dimension: int,
-        metric: DistanceMetric = "cosine"
+        metric: DistanceMetric = "cosine",
+        index_type: Optional[str] = None,
+        **index_params
     ):
         """
         Initialize the vector database.
@@ -55,15 +58,23 @@ class VectorDB:
         Args:
             dimension: Dimensionality of vectors
             metric: Distance metric ('cosine', 'euclidean', 'dot_product')
+            index_type: Type of index ('ivf' or None for brute-force)
+            **index_params: Additional parameters for the index
         """
         self.dimension = dimension
         self.metric = metric
+        self.index_type = index_type
+        self.index_params = index_params
         
         # Storage
         self._vectors: np.ndarray = np.empty((0, dimension), dtype=np.float32)
         self._ids: List[str] = []
         self._metadata: Dict[str, Any] = {}
         self._id_to_idx: Dict[str, int] = {}
+        
+        # Index (will be initialized when needed)
+        self._index = None
+        self._index_built = False
         
     def __len__(self) -> int:
         """Return the number of vectors in the database."""
@@ -103,6 +114,9 @@ class VectorDB:
         
         if metadata is not None:
             self._metadata[id] = metadata
+        
+        # Mark index as stale
+        self._index_built = False
     
     def batch_insert(
         self,
@@ -144,6 +158,8 @@ class VectorDB:
             self._id_to_idx[id] = start_idx + i
             if metadata is not None and i < len(metadata):
                 self._metadata[id] = metadata[i]
+        
+        self._index_built = False
     
     def delete(self, id: str) -> None:
         """
@@ -170,6 +186,8 @@ class VectorDB:
         
         # Rebuild ID mapping
         self._id_to_idx = {id: i for i, id in enumerate(self._ids)}
+        
+        self._index_built = False
     
     def update(
         self,
@@ -196,6 +214,7 @@ class VectorDB:
         if vector is not None:
             vector = validate_vector(vector, self.dimension)
             self._vectors[idx] = vector
+            self._index_built = False
         
         if metadata is not None:
             self._metadata[id] = metadata
@@ -230,7 +249,7 @@ class VectorDB:
         return_scores: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Search for the most similar vectors (brute-force).
+        Search for the most similar vectors.
         
         Args:
             query: Query vector
@@ -245,6 +264,21 @@ class VectorDB:
         
         query = validate_vector(query, self.dimension)
         
+        # Use index if available, otherwise brute-force
+        if self.index_type == 'ivf' and self._index_built:
+            return self._search_ivf(query, top_k, return_scores)
+        else:
+            return self._search_brute_force(query, top_k, return_scores)
+    
+    def _search_brute_force(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        return_scores: bool
+    ) -> List[Dict[str, Any]]:
+        """
+        Brute-force search over all vectors.
+        """
         # Compute distances to all vectors
         scores = compute_distances(query, self._vectors, self.metric)
         
@@ -265,12 +299,50 @@ class VectorDB:
         
         return results
     
+    def _search_ivf(
+        self,
+        query: np.ndarray,
+        top_k: int,
+        return_scores: bool
+    ) -> List[Dict[str, Any]]:
+        """
+        Search using IVF index.
+        """
+        if self._index is None:
+            return self._search_brute_force(query, top_k, return_scores)
+        
+        return self._index.search(query, top_k, return_scores)
+    
+    def build_index(self) -> None:
+        """
+        Build the index for faster search.
+        Only applicable when index_type is set.
+        """
+        if self.index_type is None:
+            return
+        
+        if self.index_type == 'ivf':
+            from .index import IVFIndex
+            self._index = IVFIndex(
+                vectors=self._vectors,
+                ids=self._ids,
+                metadata=self._metadata,
+                metric=self.metric,
+                **self.index_params
+            )
+            self._index.build()
+            self._index_built = True
+        else:
+            raise ValueError(f"Unsupported index type: {self.index_type}")
+    
     def clear(self) -> None:
         """Remove all vectors from the database."""
         self._vectors = np.empty((0, self.dimension), dtype=np.float32)
         self._ids = []
         self._metadata = {}
         self._id_to_idx = {}
+        self._index = None
+        self._index_built = False
     
     @property
     def ids(self) -> List[str]:
@@ -309,11 +381,43 @@ class VectorDB:
         config = {
             'dimension': self.dimension,
             'metric': self.metric,
+            'index_type': self.index_type,
+            'index_params': self.index_params,
             'n_vectors': len(self)
         }
         config_file = path / "config.json"
         with open(config_file, 'w') as f:
             json.dump(config, f, indent=2)
+        
+        # Save index if built
+        if self.index_type == 'ivf' and self._index_built and self._index is not None:
+            self._save_ivf_index(self._index, path)
+
+    def _save_ivf_index(self, index, path: Path) -> None:
+        """
+        Save IVF index state.
+        
+        Args:
+            index: IVFIndex instance
+            path: Directory path to save to
+        """
+        index_file = path / "ivf_index.npz"
+        
+        # Save centroids and inverted lists
+        # Convert inverted lists to a format that can be saved
+        inverted_lists_array = np.array(
+            [np.array(lst, dtype=np.int32) for lst in index.inverted_lists.values()],
+            dtype=object
+        )
+        
+        np.savez_compressed(
+            index_file,
+            centroids=index.kmeans.centroids,
+            labels=index.kmeans.labels,
+            n_clusters=np.array([index.kmeans.n_clusters]),
+            inverted_lists=inverted_lists_array,
+            nprobe=np.array([index.nprobe])
+        )
 
     @staticmethod
     def load(path: str) -> 'VectorDB':
@@ -346,7 +450,9 @@ class VectorDB:
         # Create VectorDB instance
         db = VectorDB(
             dimension=config['dimension'],
-            metric=config['metric']
+            metric=config['metric'],
+            index_type=config.get('index_type'),
+            **config.get('index_params', {})
         )
         
         # Load vectors and IDs
@@ -365,4 +471,49 @@ class VectorDB:
             with open(metadata_file, 'r') as f:
                 db._metadata = json.load(f)
         
+        # Load index if it exists
+        if db.index_type == 'ivf':
+            index_file = path / "ivf_index.npz"
+            if index_file.exists():
+                VectorDB._load_ivf_index(db, index_file)
+        
         return db
+
+    @staticmethod
+    def _load_ivf_index(db: 'VectorDB', index_file: Path) -> None:
+        """
+        Load IVF index state.
+        
+        Args:
+            db: VectorDB instance to load index into
+            index_file: Path to index file
+        """
+        from .index import IVFIndex, KMeans
+        
+        data = np.load(index_file, allow_pickle=True)
+        
+        # Create IVF index
+        # Use saved values, not the ones from index_params to avoid conflicts
+        db._index = IVFIndex(
+            vectors=db._vectors,
+            ids=db._ids,
+            metadata=db._metadata,
+            metric=db.metric,
+            n_clusters=int(data['n_clusters'][0]),
+            nprobe=int(data['nprobe'][0])
+        )
+        
+        # Restore k-means state
+        db._index.kmeans = KMeans(n_clusters=int(data['n_clusters'][0]))
+        db._index.kmeans.centroids = data['centroids']
+        db._index.kmeans.labels = data['labels']
+        db._index.kmeans.n_clusters = int(data['n_clusters'][0])
+        
+        # Restore inverted lists
+        inverted_lists_array = data['inverted_lists']
+        db._index.inverted_lists = {
+            i: lst.tolist() for i, lst in enumerate(inverted_lists_array)
+        }
+        
+        db._index._is_built = True
+        db._index_built = True

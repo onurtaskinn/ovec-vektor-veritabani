@@ -75,6 +75,45 @@ def example_2_batch_operations():
     print()
 
 
+def example_3_ivf_index():
+    """Example 3: Using IVF index for faster search."""
+    print("=" * 60)
+    print("Example 3: IVF Index for Fast Search")
+    print("=" * 60)
+    
+    # Create database with IVF index
+    db = VectorDB(
+        dimension=128,
+        metric="cosine",
+        index_type="ivf",
+        n_clusters=50,  # Number of clusters
+        nprobe=5        # Number of clusters to search
+    )
+    
+    # Insert many vectors
+    n_vectors = 5000
+    vectors = np.random.randn(n_vectors, 128).astype(np.float32)
+    ids = [f"vec_{i}" for i in range(n_vectors)]
+    
+    print(f"Inserting {n_vectors} vectors...")
+    db.batch_insert(ids, vectors)
+    
+    # Build the index
+    print("Building IVF index...")
+    db.build_index()
+    print("✓ Index built")
+    
+    # Search (will use IVF index automatically)
+    query = np.random.randn(128).astype(np.float32)
+    results = db.search(query, top_k=10)
+    
+    print(f"\n🔍 Found {len(results)} results using IVF index")
+    for i, result in enumerate(results[:3], 1):
+        print(f"  {i}. {result['id']} (score: {result['score']:.4f})")
+    
+    print()
+
+
 def example_4_different_metrics():
     """Example 4: Different distance metrics."""
     print("=" * 60)
@@ -215,7 +254,7 @@ def example_6_crud_operations():
 if __name__ == "__main__":
     example_1_basic_usage()
     example_2_batch_operations()
-    # example_3_ivf_index()
+    example_3_ivf_index()
     example_4_different_metrics()
     example_5_persistence()
     example_6_crud_operations()

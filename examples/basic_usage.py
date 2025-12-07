@@ -251,6 +251,60 @@ def example_6_crud_operations():
     print()
 
 
+def example_7_real_world_simulation():
+    """Example 7: Simulating a real-world use case (text embeddings)."""
+    print("=" * 60)
+    print("Example 7: Simulating Text Search (with fake embeddings)")
+    print("=" * 60)
+    
+    # Simulate text embeddings (in real use, these would come from a model like BERT)
+    documents = [
+        "The quick brown fox jumps over the lazy dog",
+        "Machine learning is a subset of artificial intelligence",
+        "Python is a popular programming language",
+        "Vector databases enable semantic search",
+        "Natural language processing uses neural networks",
+        "Deep learning models require large datasets",
+        "The cat sat on the mat",
+        "Search engines use inverted indices",
+        "Embeddings capture semantic meaning",
+        "Neural networks learn from data"
+    ]
+    
+    # Create "fake" embeddings (random, but consistent)
+    np.random.seed(42)
+    dimension = 384  # Common embedding dimension
+    embeddings = np.random.randn(len(documents), dimension).astype(np.float32)
+    
+    # Create database
+    db = VectorDB(dimension=dimension, metric="cosine")
+    
+    # Insert documents
+    for i, (doc, emb) in enumerate(zip(documents, embeddings)):
+        db.insert(
+            id=f"doc_{i}",
+            vector=emb,
+            metadata={"text": doc, "index": i}
+        )
+    
+    print(f"✓ Indexed {len(documents)} documents")
+    
+    # Simulate a search query
+    query_text = "artificial intelligence and neural networks"
+    query_embedding = np.random.randn(dimension).astype(np.float32)
+    
+    print(f"\n🔍 Query: '{query_text}'")
+    print("\nTop 5 most relevant documents:")
+    
+    results = db.search(query_embedding, top_k=5)
+    
+    for i, result in enumerate(results, 1):
+        print(f"\n{i}. Score: {result['score']:.4f}")
+        print(f"   Text: {result['metadata']['text']}")
+    
+    print()
+
+
 if __name__ == "__main__":
     example_1_basic_usage()
     example_2_batch_operations()
@@ -258,7 +312,7 @@ if __name__ == "__main__":
     example_4_different_metrics()
     example_5_persistence()
     example_6_crud_operations()
-    # example_7_real_world_simulation()
+    example_7_real_world_simulation()
     
     print("=" * 60)
     print("✅ All examples completed!")
